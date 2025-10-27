@@ -4,7 +4,8 @@ Serial myPort;
 String angle = "", distance = "", data = "";
 int iAngle = 0, iDistance = 0;
 
-float[] distanceArray = new float[181];  // Store distances for each angle
+float[] distanceArray = new float[181];
+float[] distanceHistory = new float[500]; // for small graph below
 
 int sweepAngle = 0;
 boolean sweepForward = true;
@@ -12,21 +13,22 @@ boolean sweepForward = true;
 void setup() {
   size(1200, 700);
   smooth();
-  myPort = new Serial(this, "COM5", 9600); // Update COM port as needed
+  myPort = new Serial(this, "COM5", 9600); // Update COM port
   myPort.bufferUntil('.');
 }
 
 void draw() {
-  fill(0, 40); // trail effect
+  // semi-transparent background for fading trail effect
+  fill(0, 40);
   noStroke();
   rect(0, 0, width, height - height * 0.065);
 
-  fill(98, 245, 31);
-  drawRadar();
+  drawRadarGrid();
   drawSweepLine();
-  drawDetectedDots();  // Draw objects as large segments
-  drawText();
+  drawDetectedDots();
+  drawTextPanel();
   updateSweepAngle();
+  drawDistanceHistory();
 }
 
 void serialEvent(Serial myPort) {
@@ -47,22 +49,30 @@ void serialEvent(Serial myPort) {
       } else {
         distanceArray[iAngle] = 0;
       }
+
+      // Save distance history for graph
+      for (int i = distanceHistory.length - 1; i > 0; i--) {
+        distanceHistory[i] = distanceHistory[i - 1];
+      }
+      distanceHistory[0] = iDistance;
     }
   }
 }
 
-void drawRadar() {
+void drawRadarGrid() {
   pushMatrix();
   translate(width / 2, height - height * 0.074);
   noFill();
-  strokeWeight(2);
+  strokeWeight(1.5);
   stroke(98, 245, 31);
 
+  // Distance arcs
   for (float r : new float[]{0.9375, 0.73, 0.521, 0.313}) {
     arc(0, 0, width * r, width * r, PI, TWO_PI);
   }
 
-  for (int a = 0; a <= 180; a += 30) {
+  // Angle lines
+  for (int a = 0; a <= 180; a += 15) {
     line(0, 0, -width / 2 * cos(radians(a)), -width / 2 * sin(radians(a)));
   }
 
@@ -71,10 +81,11 @@ void drawRadar() {
 
 void drawSweepLine() {
   pushMatrix();
-  strokeWeight(2);
-  stroke(30, 250, 60);
   translate(width / 2, height - height * 0.074);
-  line(0, 0, (height - height * 0.12) * cos(radians(sweepAngle)), -(height - height * 0.12) * sin(radians(sweepAngle)));
+  strokeWeight(2);
+  stroke(0, 255, 0);
+  line(0, 0, (height - height * 0.12) * cos(radians(sweepAngle)),
+       -(height - height * 0.12) * sin(radians(sweepAngle)));
   popMatrix();
 }
 
@@ -95,79 +106,62 @@ void drawDetectedDots() {
   for (int a = 0; a <= 180; a++) {
     float d = distanceArray[a];
     if (d > 0) {
-      float pixelDist = d * 10;  // scale distance for visualization
-      float sectorWidth = 4;     // angular width of each segment
-      float startAngle = radians(a - sectorWidth / 2);
-      float endAngle = radians(a + sectorWidth / 2);
-      float innerRadius = pixelDist - 10;
-      float outerRadius = pixelDist + 10;
+      float pixelDist = d * 10;
+      color c;
+      if (d < 15) c = color(255, 0, 0, 200);
+      else if (d < 30) c = color(255, 255, 0, 200);
+      else c = color(0, 255, 0, 180);
 
-      fill(255, 0, 0, 180);  // semi-transparent red
+      fill(c);
       noStroke();
-      beginShape();
-      for (float angle = startAngle; angle <= endAngle; angle += radians(1)) {
-        float x = outerRadius * cos(angle);
-        float y = -outerRadius * sin(angle);
-        vertex(x, y);
-      }
-      for (float angle = endAngle; angle >= startAngle; angle -= radians(1)) {
-        float x = innerRadius * cos(angle);
-        float y = -innerRadius * sin(angle);
-        vertex(x, y);
-      }
-      endShape(CLOSE);
 
-      // Optional: Draw distance text
-      fill(255);
-      textSize(12);
-      textAlign(CENTER);
-      float labelX = pixelDist * cos(radians(a));
-      float labelY = -pixelDist * sin(radians(a));
-      text(int(d) + "cm", labelX, labelY - 15);
+      float x = pixelDist * cos(radians(a));
+      float y = -pixelDist * sin(radians(a));
+      ellipse(x, y, 10, 10);
     }
   }
-
   popMatrix();
 }
 
-void drawText() {
+void drawTextPanel() {
   pushMatrix();
-
   fill(0);
   noStroke();
   rect(0, height - height * 0.0648f, width, height);
   fill(98, 245, 31);
   textSize(25);
+  textAlign(LEFT);
   text("10cm", width - width * 0.3854f, height - height * 0.0833f);
   text("20cm", width - width * 0.281f, height - height * 0.0833f);
   text("30cm", width - width * 0.177f, height - height * 0.0833f);
   text("40cm", width - width * 0.0729f, height - height * 0.0833f);
 
-  textSize(40);
-  text("N_Tech", width - width * 0.875f, height - height * 0.0277f);
-  text("Angle: " + iAngle, width - width * 0.48f, height - height * 0.0277f);
-  text("Distance: ", width - width * 0.26f, height - height * 0.0277f);
+  textSize(38);
+  fill(0, 255, 0);
+  text("N_Tech Radar", width * 0.02, height - height * 0.02);
 
-  if (iDistance <= 40) {
-    text("        " + iDistance + " cm", width - width * 0.225f, height - height * 0.0277f);
-  } else {
-    text("Out of Range", width - width * 0.225f, height - height * 0.0277f);
+  textSize(28);
+  fill(255);
+  text("Angle: " + iAngle + "°", width / 2 - 100, height - height * 0.02);
+  text("Distance: " + (iDistance <= 40 ? iDistance + " cm" : "Out of Range"), width / 2 + 100, height - height * 0.02);
+
+  popMatrix();
+}
+
+void drawDistanceHistory() {
+  // Small graph at bottom showing recent distance variation
+  pushMatrix();
+  stroke(0, 255, 0);
+  noFill();
+  translate(50, height - 100);
+  beginShape();
+  for (int i = 0; i < distanceHistory.length; i++) {
+    float y = map(distanceHistory[i], 0, 40, 80, 0);
+    vertex(i, y);
   }
-
-  textSize(25);
-  fill(98, 245, 60);
-
-  String[] angles = { "30", "60", "90", "120", "150" };
-  int[] angleValues = { 30, 60, 90, 120, 150 };
-  float[] rotations = { -60, -30, 0, 30, 60 };
-
-  for (int i = 0; i < angles.length; i++) {
-    resetMatrix();
-    translate((width - width * 0.5f) + width / 2 * cos(radians(angleValues[i])),
-              (height - height * 0.09f) - width / 2 * sin(radians(angleValues[i])));
-    rotate(radians(-rotations[i]));
-    text(angles[i], 0, 0);
-  }
-
+  endShape();
+  fill(255);
+  textSize(14);
+  text("Distance History (cm)", 0, -10);
   popMatrix();
 }
